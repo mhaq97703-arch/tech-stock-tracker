@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import {
   Laptop, Monitor, Cable, Keyboard as KeyboardIcon, Printer, Package,
   Search, Plus, Users, History as HistoryIcon, Home, CheckCircle2, ArrowLeft, X,
-  ChevronRight, Clock, Send, PackageCheck, AlertCircle
+  ChevronRight, Clock, Send, PackageCheck, AlertCircle, Pencil, Trash2, Lock
 } from "lucide-react";
 
 const SUPABASE_URL = "https://vitkekuojfeskeysdmff.supabase.co";
@@ -39,6 +39,7 @@ export default function App() {
   const [saveError, setSaveError] = useState(false);
   const [view, setView] = useState({ name: "dashboard" });
   const [toast, setToast] = useState(null);
+  const [passwordGate, setPasswordGate] = useState(null); // { label, onConfirm } | null
   const toastTimer = useRef(null);
 
   useEffect(() => {
@@ -150,6 +151,24 @@ export default function App() {
     return true;
   }
 
+  function requestPassword(label, onConfirm) {
+    setPasswordGate({ label, onConfirm });
+  }
+
+  function updateRecord(listKey, id, updates) {
+    const list = data[listKey]
+      .map(r => (r.id === id ? { ...r, ...updates } : r))
+      .filter(r => r.quantity > 0);
+    persist({ ...data, [listKey]: list });
+    showToast("Updated");
+  }
+
+  function deleteRecordFn(listKey, id) {
+    const list = data[listKey].filter(r => r.id !== id);
+    persist({ ...data, [listKey]: list });
+    showToast("Deleted");
+  }
+
   function resetAll() {
     persist(emptyData());
     showToast("All data cleared");
@@ -203,9 +222,10 @@ export default function App() {
   }
 
   const vars = {
-    "--bg": "#F1EEE6", "--panel": "#FFFFFF", "--ink": "#22251F", "--ink-soft": "#6B6D62",
-    "--border": "#DCD5C2", "--claimed": "#B8721E", "--claimed-soft": "#F5E4C6",
-    "--spare": "#2A6858", "--spare-soft": "#DCEAE4", "--danger": "#9C4430", "--danger-soft": "#F3E0D8",
+    "--bg": "#F3F6FC", "--panel": "#FFFFFF", "--ink": "#001E5F", "--ink-soft": "#5C6B85",
+    "--border": "#D6E1F5", "--claimed": "#001E5F", "--claimed-soft": "#DCE6F7",
+    "--spare": "#2F6FB0", "--spare-soft": "#E4EEFB", "--danger": "#B23B3B", "--danger-soft": "#F5DEDE",
+    "--neutral-soft": "#E8EEF7",
     "--font-display": "'Space Grotesk', sans-serif", "--font-body": "'Inter', sans-serif",
     "--font-mono": "'IBM Plex Mono', monospace",
   };
@@ -235,41 +255,95 @@ export default function App() {
         .btn-outline:hover { background: var(--ink); color: var(--bg); }
         .chip-claimed { background: var(--claimed-soft); color: var(--claimed); }
         .chip-spare { background: var(--spare-soft); color: var(--spare); }
-        .chip-pending { background: #EFE9DA; color: var(--ink-soft); }
+        .chip-pending { background: var(--neutral-soft); color: var(--ink-soft); }
         input[type=text], input[type=number], select, textarea {
           background: var(--panel); border: 1.5px solid var(--border); color: var(--ink); font-family: var(--font-body);
         }
         input:focus, select:focus, textarea:focus { outline: none; border-color: var(--ink); }
         .navbtn { font-family: var(--font-display); }
         .navbtn.active { background: var(--ink); color: var(--bg); }
+        .icon-btn { color: var(--ink-soft); border-radius: 8px; padding: 5px; }
+        .icon-btn:hover { background: var(--neutral-soft); }
+        .icon-btn.danger:hover { background: var(--danger-soft); color: var(--danger); }
+        button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible {
+          outline: 2.5px solid var(--spare); outline-offset: 2px;
+        }
       `}</style>
 
       <TopNav view={view} goto={goto} />
 
       <main className="max-w-5xl mx-auto px-5 pb-24 pt-6">
         {view.name === "dashboard" && (
-          <Dashboard totals={totals} goto={goto} handleSearch={handleSearch} peopleWithItemsHere={peopleWithItemsHere} resetAll={resetAll} />
+          <Dashboard totals={totals} goto={goto} handleSearch={handleSearch} peopleWithItemsHere={peopleWithItemsHere}
+            onRequestReset={() => requestPassword("Clear All Data", resetAll)} />
         )}
         {view.name === "receive" && <ReceiveStock addStock={addStock} otherNames={otherNames} />}
         {view.name === "people" && <PeopleList allPeople={allPeople} peopleWithItemsHere={peopleWithItemsHere} goto={goto} />}
         {view.name === "giveout" && (
           <GiveOut data={data} allPeople={allPeople} giveOutClaimed={giveOutClaimed} giveOutSpare={giveOutSpare} presetPerson={view.person} goto={goto} />
         )}
-        {view.name === "history" && <HistoryPage givenOut={data.givenOut} />}
+        {view.name === "history" && (
+          <HistoryPage givenOut={data.givenOut} updateRecord={updateRecord} deleteRecordFn={deleteRecordFn} requestPassword={requestPassword} />
+        )}
         {view.name === "category" && (
-          <CategoryPage category={view.category} focusName={view.focusName} data={data} totals={totals} goto={goto} />
+          <CategoryPage category={view.category} focusName={view.focusName} data={data} totals={totals} goto={goto}
+            updateRecord={updateRecord} deleteRecordFn={deleteRecordFn} requestPassword={requestPassword} />
         )}
         {view.name === "person" && (
-          <PersonPage name={view.person} data={data} goto={goto} markReceived={markReceived} addStock={addStock} otherNames={otherNames} />
+          <PersonPage name={view.person} data={data} goto={goto} markReceived={markReceived} addStock={addStock} otherNames={otherNames}
+            updateRecord={updateRecord} deleteRecordFn={deleteRecordFn} requestPassword={requestPassword} />
         )}
       </main>
 
+      {passwordGate && (
+        <PasswordModal gate={passwordGate} onClose={() => setPasswordGate(null)} />
+      )}
+
       {toast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 px-4 py-2.5 rounded-full shadow-lg text-sm z-50"
+        <div role="status" aria-live="polite" className="fixed bottom-6 left-1/2 -translate-x-1/2 px-4 py-2.5 rounded-full shadow-lg text-sm z-50"
           style={{ background: "var(--ink)", color: "var(--bg)", fontFamily: "var(--font-body)" }}>
           {toast}
         </div>
       )}
+    </div>
+  );
+}
+
+// ================= PASSWORD MODAL =================
+function PasswordModal({ gate, onClose }) {
+  const [pin, setPin] = useState("");
+  const [error, setError] = useState("");
+
+  function submit(e) {
+    e.preventDefault();
+    if (pin === "0000") {
+      gate.onConfirm();
+      onClose();
+    } else {
+      setError("Incorrect password.");
+      setPin("");
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ background: "rgba(0,30,95,0.45)" }}>
+      <form onSubmit={submit} role="dialog" aria-modal="true" aria-labelledby="password-modal-title"
+        className="w-full max-w-xs rounded-2xl p-5 flex flex-col gap-3 shadow-xl"
+        style={{ background: "var(--panel)", border: "1px solid var(--border)" }}>
+        <div className="flex items-center gap-2">
+          <Lock size={16} style={{ color: "var(--ink)" }} />
+          <h3 id="password-modal-title" className="display font-bold text-base">{gate.label}</h3>
+        </div>
+        <p className="text-xs" style={{ color: "var(--ink-soft)" }}>Enter the password to continue.</p>
+        <input type="password" inputMode="numeric" autoFocus value={pin} aria-label="Password"
+          onChange={e => { setPin(e.target.value); setError(""); }}
+          className="w-full px-3 py-2.5 rounded-lg text-center tracking-[0.4em] text-lg" placeholder="••••" />
+        {error && <div role="alert" className="text-xs flex items-center gap-1.5" style={{ color: "var(--danger)" }}><AlertCircle size={13} /> {error}</div>}
+        <div className="flex gap-2 mt-1">
+          <button type="submit" className="btn-primary flex-1 py-2.5 rounded-lg font-semibold">Confirm</button>
+          <button type="button" onClick={onClose} className="btn-outline px-4 py-2.5 rounded-lg font-semibold">Cancel</button>
+        </div>
+      </form>
     </div>
   );
 }
@@ -286,8 +360,10 @@ function TopNav({ view, goto }) {
   return (
     <div style={{ borderBottom: "1px solid var(--border)", background: "var(--panel)" }} className="sticky top-0 z-40">
       <div className="max-w-5xl mx-auto px-5 py-3 flex items-center justify-between gap-4 flex-wrap">
-        <div className="display text-lg font-bold tracking-tight" style={{ color: "var(--ink)" }} onClick={() => goto({ name: "dashboard" })}>
-          <span className="cursor-pointer">TECH STOCK</span>
+        <div className="display text-lg font-bold tracking-tight flex items-center gap-2" style={{ color: "var(--ink)" }} onClick={() => goto({ name: "dashboard" })}>
+          <img src="/uor-logo.png" alt="" aria-hidden="true" style={{ height: 26, width: "auto" }}
+            onError={(e) => { e.currentTarget.style.display = "none"; }} />
+          <span className="cursor-pointer">UOR TECH SUPPLIES</span>
         </div>
         <nav className="flex gap-1 flex-wrap">
           {items.map(it => (
@@ -304,9 +380,8 @@ function TopNav({ view, goto }) {
 }
 
 // ================= DASHBOARD =================
-function Dashboard({ totals, goto, handleSearch, peopleWithItemsHere, resetAll }) {
+function Dashboard({ totals, goto, handleSearch, peopleWithItemsHere, onRequestReset }) {
   const [q, setQ] = useState("");
-  const [confirmingReset, setConfirmingReset] = useState(false);
 
   return (
     <div>
@@ -323,7 +398,7 @@ function Dashboard({ totals, goto, handleSearch, peopleWithItemsHere, resetAll }
         <div className="relative">
           <Search size={18} style={{ color: "var(--ink-soft)" }} className="absolute left-4 top-1/2 -translate-y-1/2" />
           <input type="text" value={q} onChange={e => setQ(e.target.value)}
-            placeholder="Search person or equipment…"
+            placeholder="Search person or equipment…" aria-label="Search person or equipment"
             className="w-full pl-11 pr-4 py-3.5 rounded-xl text-base" />
         </div>
       </form>
@@ -354,15 +429,9 @@ function Dashboard({ totals, goto, handleSearch, peopleWithItemsHere, resetAll }
       </div>
 
       <div className="mt-14 text-right">
-        {!confirmingReset ? (
-          <button onClick={() => setConfirmingReset(true)} className="text-xs underline" style={{ color: "var(--ink-soft)" }}>Reset all data</button>
-        ) : (
-          <span className="text-xs" style={{ color: "var(--ink-soft)" }}>
-            Really clear everything?{" "}
-            <button onClick={() => { resetAll(); setConfirmingReset(false); }} className="underline font-semibold" style={{ color: "var(--danger)" }}>Yes, clear</button>{" "}
-            <button onClick={() => setConfirmingReset(false)} className="underline">Cancel</button>
-          </span>
-        )}
+        <button onClick={onRequestReset} className="text-xs underline flex items-center gap-1 ml-auto" style={{ color: "var(--ink-soft)" }}>
+          <Lock size={11} /> Reset all data
+        </button>
       </div>
     </div>
   );
@@ -635,8 +704,10 @@ function GiveOut({ data, allPeople, giveOutClaimed, giveOutSpare, presetPerson, 
 }
 
 // ================= HISTORY =================
-function HistoryPage({ givenOut }) {
+function HistoryPage({ givenOut, updateRecord, deleteRecordFn, requestPassword }) {
   const [q, setQ] = useState("");
+  const [editingId, setEditingId] = useState(null);
+  const [draftQty, setDraftQty] = useState("");
   const filtered = givenOut.filter(r => {
     if (!q.trim()) return true;
     const lower = q.toLowerCase();
@@ -657,6 +728,7 @@ function HistoryPage({ givenOut }) {
                 <th className="px-4 py-2.5 font-semibold text-xs uppercase tracking-wide">Person</th>
                 <th className="px-4 py-2.5 font-semibold text-xs uppercase tracking-wide">Equipment</th>
                 <th className="px-4 py-2.5 font-semibold text-xs uppercase tracking-wide text-right">Quantity</th>
+                <th className="px-4 py-2.5 font-semibold text-xs uppercase tracking-wide text-right">Fix</th>
               </tr>
             </thead>
             <tbody>
@@ -664,7 +736,32 @@ function HistoryPage({ givenOut }) {
                 <tr key={r.id} className="dashed-div">
                   <td className="px-4 py-2.5 font-medium">{r.person}</td>
                   <td className="px-4 py-2.5">{itemLabel(r)}</td>
-                  <td className="px-4 py-2.5 text-right mono">{r.quantity}</td>
+                  <td className="px-4 py-2.5 text-right mono">
+                    {editingId === r.id ? (
+                      <input type="number" min="1" value={draftQty} onChange={e => setDraftQty(e.target.value)}
+                        aria-label={`New quantity for ${itemLabel(r)} given to ${r.person}`}
+                        className="w-16 px-2 py-1 rounded-lg text-sm text-center" autoFocus />
+                    ) : r.quantity}
+                  </td>
+                  <td className="px-4 py-2.5 text-right">
+                    {editingId === r.id ? (
+                      <span className="inline-flex items-center gap-1.5">
+                        <button onClick={() => {
+                          const qty = parseInt(draftQty, 10);
+                          if (qty > 0) updateRecord("givenOut", r.id, { quantity: qty });
+                          setEditingId(null);
+                        }} className="btn-primary text-xs px-2.5 py-1.5 rounded-lg font-semibold">Save</button>
+                        <button onClick={() => setEditingId(null)} className="btn-outline text-xs px-2.5 py-1.5 rounded-lg font-semibold">Cancel</button>
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1">
+                        <button onClick={() => requestPassword("Edit Item", () => { setEditingId(r.id); setDraftQty(String(r.quantity)); })}
+                          aria-label={`Edit quantity for ${itemLabel(r)} given to ${r.person}`} title="Edit quantity" className="icon-btn"><Pencil size={13} /></button>
+                        <button onClick={() => requestPassword("Delete Item", () => deleteRecordFn("givenOut", r.id))}
+                          aria-label={`Delete ${itemLabel(r)} given to ${r.person}`} title="Delete" className="icon-btn danger"><Trash2 size={13} /></button>
+                      </span>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -675,9 +772,45 @@ function HistoryPage({ givenOut }) {
   );
 }
 
+// ================= ITEM ROW (edit / delete) =================
+function ItemRow({ label, onClickLabel, quantity, chipClass, editing, draftQty, onDraftChange, onEdit, onDelete, onSave, onCancel }) {
+  if (editing) {
+    return (
+      <div className="tag-card flex items-center justify-between px-4 py-2.5 gap-2">
+        <span className="font-medium truncate">{label}</span>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <input type="number" min="1" value={draftQty} onChange={e => onDraftChange(e.target.value)}
+            aria-label={`New quantity for ${label}`}
+            className="w-16 px-2 py-1.5 rounded-lg text-sm text-center" autoFocus />
+          <button onClick={onSave} className="btn-primary text-xs px-2.5 py-1.5 rounded-lg font-semibold">Save</button>
+          <button onClick={onCancel} className="btn-outline text-xs px-2.5 py-1.5 rounded-lg font-semibold">Cancel</button>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="tag-card flex items-center justify-between px-4 py-2.5 gap-2">
+      {onClickLabel ? (
+        <button onClick={onClickLabel} className="font-medium truncate text-left hover:underline">{label}</button>
+      ) : (
+        <span className="font-medium truncate">{label}</span>
+      )}
+      <div className="flex items-center gap-1.5 shrink-0">
+        <span className={`mono ${chipClass} text-xs font-semibold px-2 py-1 rounded-full`}>×{quantity}</span>
+        <button onClick={onEdit} aria-label={`Edit quantity for ${label}`} title="Edit quantity" className="icon-btn"><Pencil size={13} /></button>
+        <button onClick={onDelete} aria-label={`Delete ${label}`} title="Delete" className="icon-btn danger"><Trash2 size={13} /></button>
+      </div>
+    </div>
+  );
+}
+
 // ================= CATEGORY PAGE =================
-function CategoryPage({ category, focusName, data, totals, goto }) {
+function CategoryPage({ category, focusName, data, totals, goto, updateRecord, deleteRecordFn, requestPassword }) {
   const Icon = CATEGORY_ICON[category];
+  const [editingId, setEditingId] = useState(null);
+  const [draftQty, setDraftQty] = useState("");
+  const [editingSpare, setEditingSpare] = useState(false);
+  const [draftSpareQty, setDraftSpareQty] = useState("");
 
   if (category === "Other Equipment" && !focusName) {
     const names = Array.from(new Set([
@@ -716,7 +849,9 @@ function CategoryPage({ category, focusName, data, totals, goto }) {
   }
 
   const claimedRecs = data.claimed.filter(r => r.category === category && (category !== "Other Equipment" || r.otherName === focusName));
-  const spareQty = data.spare.filter(r => r.category === category && (category !== "Other Equipment" || r.otherName === focusName)).reduce((s, r) => s + r.quantity, 0);
+  const spareRecs = data.spare.filter(r => r.category === category && (category !== "Other Equipment" || r.otherName === focusName));
+  const spareRec = spareRecs[0] || null;
+  const spareQty = spareRecs.reduce((s, r) => s + r.quantity, 0);
   const claimedQty = claimedRecs.reduce((s, r) => s + r.quantity, 0);
   const title = category === "Other Equipment" ? focusName : category;
 
@@ -732,16 +867,52 @@ function CategoryPage({ category, focusName, data, totals, goto }) {
       ) : (
         <div className="flex flex-col gap-1.5 mb-6">
           {claimedRecs.map(r => (
-            <button key={r.id} onClick={() => goto({ name: "person", person: r.person })} className="tag-card flex items-center justify-between px-4 py-2.5 text-left">
-              <span className="font-medium">{r.person}</span>
-              <span className="mono chip-claimed text-xs font-semibold px-2 py-1 rounded-full">{r.quantity}</span>
-            </button>
+            <ItemRow key={r.id}
+              label={r.person}
+              onClickLabel={() => goto({ name: "person", person: r.person })}
+              quantity={r.quantity}
+              chipClass="chip-claimed"
+              editing={editingId === r.id}
+              draftQty={draftQty}
+              onDraftChange={setDraftQty}
+              onEdit={() => requestPassword("Edit Item", () => { setEditingId(r.id); setDraftQty(String(r.quantity)); })}
+              onDelete={() => requestPassword("Delete Item", () => deleteRecordFn("claimed", r.id))}
+              onSave={() => {
+                const qty = parseInt(draftQty, 10);
+                if (qty > 0) updateRecord("claimed", r.id, { quantity: qty });
+                setEditingId(null);
+              }}
+              onCancel={() => setEditingId(null)}
+            />
           ))}
         </div>
       )}
 
       <h2 className="display font-bold text-sm uppercase tracking-wide mb-2" style={{ color: "var(--ink-soft)" }}>Spare — {spareQty}</h2>
-      <div className="tag-card px-4 py-3 mono text-2xl font-semibold">{spareQty}</div>
+      {editingSpare && spareRec ? (
+        <div className="tag-card px-4 py-3 flex items-center gap-2">
+          <input type="number" min="1" value={draftSpareQty} onChange={e => setDraftSpareQty(e.target.value)}
+            className="w-20 px-2 py-1.5 rounded-lg text-lg mono" autoFocus />
+          <button onClick={() => {
+            const qty = parseInt(draftSpareQty, 10);
+            if (qty > 0) updateRecord("spare", spareRec.id, { quantity: qty });
+            setEditingSpare(false);
+          }} className="btn-primary text-xs px-3 py-1.5 rounded-lg font-semibold">Save</button>
+          <button onClick={() => setEditingSpare(false)} className="btn-outline text-xs px-3 py-1.5 rounded-lg font-semibold">Cancel</button>
+        </div>
+      ) : (
+        <div className="tag-card px-4 py-3 flex items-center justify-between">
+          <span className="mono text-2xl font-semibold">{spareQty}</span>
+          {spareRec && (
+            <div className="flex items-center gap-1.5">
+              <button onClick={() => requestPassword("Edit Spare Quantity", () => { setEditingSpare(true); setDraftSpareQty(String(spareRec.quantity)); })}
+                aria-label="Edit spare quantity" title="Edit quantity" className="icon-btn"><Pencil size={14} /></button>
+              <button onClick={() => requestPassword("Delete Spare Stock", () => deleteRecordFn("spare", spareRec.id))}
+                aria-label="Delete spare stock" title="Delete" className="icon-btn danger"><Trash2 size={14} /></button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -755,12 +926,14 @@ function BackBtn({ goto, onClick }) {
 }
 
 // ================= PERSON PAGE =================
-function PersonPage({ name, data, goto, markReceived, addStock, otherNames }) {
+function PersonPage({ name, data, goto, markReceived, addStock, otherNames, updateRecord, deleteRecordFn, requestPassword }) {
   const [addingExpected, setAddingExpected] = useState(false);
   const [exCategory, setExCategory] = useState("Laptop");
   const [exOtherName, setExOtherName] = useState("");
   const [exQty, setExQty] = useState(1);
   const [err, setErr] = useState("");
+  const [editing, setEditing] = useState(null); // { list, id } | null
+  const [draftQty, setDraftQty] = useState("");
 
   const claimed = data.claimed.filter(r => r.person.toLowerCase() === name.toLowerCase());
   const pending = data.pending.filter(r => r.person.toLowerCase() === name.toLowerCase());
@@ -777,6 +950,18 @@ function PersonPage({ name, data, goto, markReceived, addStock, otherNames }) {
     setExQty(1); setExOtherName(""); setAddingExpected(false);
   }
 
+  function startEdit(list, r) {
+    requestPassword("Edit Item", () => { setEditing({ list, id: r.id }); setDraftQty(String(r.quantity)); });
+  }
+  function saveEdit() {
+    const qty = parseInt(draftQty, 10);
+    if (qty > 0) updateRecord(editing.list, editing.id, { quantity: qty });
+    setEditing(null);
+  }
+  function requestDelete(list, id) {
+    requestPassword("Delete Item", () => deleteRecordFn(list, id));
+  }
+
   return (
     <div className="max-w-lg">
       <BackBtn goto={goto} />
@@ -791,24 +976,46 @@ function PersonPage({ name, data, goto, markReceived, addStock, otherNames }) {
 
       <Section title="Currently Here" icon={PackageCheck}>
         {claimed.length === 0 ? <Empty text="Nothing currently here." /> : claimed.map(r => (
-          <div key={r.id} className="tag-card flex items-center justify-between px-4 py-2.5">
-            <span className="font-medium">{itemLabel(r)}</span>
-            <span className="mono chip-claimed text-xs font-semibold px-2 py-1 rounded-full">×{r.quantity}</span>
-          </div>
+          <ItemRow key={r.id}
+            label={itemLabel(r)}
+            quantity={r.quantity}
+            chipClass="chip-claimed"
+            editing={editing?.list === "claimed" && editing?.id === r.id}
+            draftQty={draftQty}
+            onDraftChange={setDraftQty}
+            onEdit={() => startEdit("claimed", r)}
+            onDelete={() => requestDelete("claimed", r.id)}
+            onSave={saveEdit}
+            onCancel={() => setEditing(null)}
+          />
         ))}
       </Section>
 
       <Section title="Not Received Yet" icon={Clock}>
         {pending.length === 0 ? <Empty text="Nothing expected right now." /> : pending.map(r => (
-          <div key={r.id} className="tag-card flex items-center justify-between px-4 py-2.5">
-            <span className="font-medium">{itemLabel(r)}</span>
-            <div className="flex items-center gap-2">
-              <span className="mono chip-pending text-xs font-semibold px-2 py-1 rounded-full">×{r.quantity}</span>
-              <button onClick={() => markReceived(r.id)} className="btn-outline text-xs px-2.5 py-1.5 rounded-lg font-semibold flex items-center gap-1">
-                <CheckCircle2 size={13} /> Mark as Received
-              </button>
+          editing?.list === "pending" && editing?.id === r.id ? (
+            <div key={r.id} className="tag-card flex items-center justify-between px-4 py-2.5 gap-2">
+              <span className="font-medium truncate">{itemLabel(r)}</span>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <input type="number" min="1" value={draftQty} onChange={e => setDraftQty(e.target.value)}
+                  className="w-16 px-2 py-1.5 rounded-lg text-sm text-center" autoFocus />
+                <button onClick={saveEdit} className="btn-primary text-xs px-2.5 py-1.5 rounded-lg font-semibold">Save</button>
+                <button onClick={() => setEditing(null)} className="btn-outline text-xs px-2.5 py-1.5 rounded-lg font-semibold">Cancel</button>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div key={r.id} className="tag-card flex items-center justify-between px-4 py-2.5 gap-2">
+              <span className="font-medium truncate">{itemLabel(r)}</span>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="mono chip-pending text-xs font-semibold px-2 py-1 rounded-full">×{r.quantity}</span>
+                <button onClick={() => markReceived(r.id)} className="btn-outline text-xs px-2.5 py-1.5 rounded-lg font-semibold flex items-center gap-1">
+                  <CheckCircle2 size={13} /> Mark as Received
+                </button>
+                <button onClick={() => startEdit("pending", r)} aria-label={`Edit quantity for ${itemLabel(r)}`} title="Edit quantity" className="icon-btn"><Pencil size={13} /></button>
+                <button onClick={() => requestDelete("pending", r.id)} aria-label={`Delete ${itemLabel(r)}`} title="Delete" className="icon-btn danger"><Trash2 size={13} /></button>
+              </div>
+            </div>
+          )
         ))}
         {!addingExpected ? (
           <button onClick={() => setAddingExpected(true)} className="text-sm underline mt-1" style={{ color: "var(--ink-soft)" }}>+ Add Expected Item</button>
@@ -833,10 +1040,18 @@ function PersonPage({ name, data, goto, markReceived, addStock, otherNames }) {
 
       <Section title="Previously Given Out" icon={HistoryIcon}>
         {givenOut.length === 0 ? <Empty text="Nothing given out yet." /> : givenOut.map(r => (
-          <div key={r.id} className="tag-card flex items-center justify-between px-4 py-2.5">
-            <span className="font-medium">{itemLabel(r)}</span>
-            <span className="mono text-xs font-semibold px-2 py-1 rounded-full" style={{ background: "#EFE9DA", color: "var(--ink-soft)" }}>×{r.quantity}</span>
-          </div>
+          <ItemRow key={r.id}
+            label={itemLabel(r)}
+            quantity={r.quantity}
+            chipClass="chip-pending"
+            editing={editing?.list === "givenOut" && editing?.id === r.id}
+            draftQty={draftQty}
+            onDraftChange={setDraftQty}
+            onEdit={() => startEdit("givenOut", r)}
+            onDelete={() => requestDelete("givenOut", r.id)}
+            onSave={saveEdit}
+            onCancel={() => setEditing(null)}
+          />
         ))}
       </Section>
     </div>
