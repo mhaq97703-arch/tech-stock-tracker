@@ -3,7 +3,8 @@ import { createClient } from "@supabase/supabase-js";
 import {
   Laptop, Monitor, Cable, Keyboard as KeyboardIcon, Printer, Package,
   Search, Plus, Users, History as HistoryIcon, Home, CheckCircle2, ArrowLeft, X,
-  ChevronRight, Clock, Send, PackageCheck, AlertCircle, Pencil, Trash2, Lock
+  ChevronRight, Clock, Send, PackageCheck, AlertCircle, Pencil, Trash2, Lock,
+  RotateCcw, Repeat, UserX
 } from "lucide-react";
 
 const SUPABASE_URL = "https://vitkekuojfeskeysdmff.supabase.co";
@@ -22,7 +23,7 @@ function uid() {
 }
 
 function emptyData() {
-  return { claimed: [], spare: [], pending: [], givenOut: [] };
+  return { claimed: [], spare: [], pending: [], givenOut: [], loaned: [] };
 }
 
 function itemLabel(rec) {
@@ -57,6 +58,7 @@ export default function App() {
             spare: row.data.spare || [],
             pending: row.data.pending || [],
             givenOut: row.data.givenOut || [],
+            loaned: row.data.loaned || [],
           });
         }
       } catch (e) {
@@ -169,6 +171,61 @@ export default function App() {
     showToast("Deleted");
   }
 
+  function returnToSpare(claimedId) {
+    const rec = data.claimed.find(r => r.id === claimedId);
+    if (!rec) return;
+    const claimed = data.claimed.filter(r => r.id !== claimedId);
+    const spare = [...data.spare];
+    const idx = spare.findIndex(r => r.category === rec.category && r.otherName === rec.otherName);
+    if (idx >= 0) spare[idx] = { ...spare[idx], quantity: spare[idx].quantity + rec.quantity };
+    else spare.push({ id: uid(), category: rec.category, otherName: rec.otherName, quantity: rec.quantity });
+    persist({ ...data, claimed, spare });
+    showToast(`Returned ${itemLabel(rec)} to spare stock`);
+  }
+
+  function loanOut({ category, otherName, quantity, person }) {
+    const otherKey = category === "Other Equipment" ? (otherName || "").trim() : "";
+    const spare = [...data.spare];
+    const idx = spare.findIndex(r => r.category === category && r.otherName === otherKey);
+    if (idx < 0 || spare[idx].quantity < quantity) {
+      showToast("Not enough spare stock");
+      return false;
+    }
+    spare[idx] = { ...spare[idx], quantity: spare[idx].quantity - quantity };
+    const filtered = spare.filter(r => r.quantity > 0);
+    const loaned = [...data.loaned];
+    const lidx = loaned.findIndex(r => r.category === category && r.otherName === otherKey && r.person.toLowerCase() === person.toLowerCase());
+    if (lidx >= 0) loaned[lidx] = { ...loaned[lidx], quantity: loaned[lidx].quantity + quantity };
+    else loaned.push({ id: uid(), category, otherName: otherKey, person: person.trim(), quantity });
+    persist({ ...data, spare: filtered, loaned });
+    showToast(`Loaned ${quantity} × ${otherKey || category} to ${person}`);
+    return true;
+  }
+
+  function returnLoan(loanId) {
+    const rec = data.loaned.find(r => r.id === loanId);
+    if (!rec) return;
+    const loaned = data.loaned.filter(r => r.id !== loanId);
+    const spare = [...data.spare];
+    const idx = spare.findIndex(r => r.category === rec.category && r.otherName === rec.otherName);
+    if (idx >= 0) spare[idx] = { ...spare[idx], quantity: spare[idx].quantity + rec.quantity };
+    else spare.push({ id: uid(), category: rec.category, otherName: rec.otherName, quantity: rec.quantity });
+    persist({ ...data, loaned, spare });
+    showToast(`${itemLabel(rec)} returned from ${rec.person}`);
+  }
+
+  function deletePerson(name) {
+    const lower = name.toLowerCase();
+    persist({
+      claimed: data.claimed.filter(r => r.person.toLowerCase() !== lower),
+      spare: data.spare,
+      pending: data.pending.filter(r => r.person.toLowerCase() !== lower),
+      givenOut: data.givenOut.filter(r => r.person.toLowerCase() !== lower),
+      loaned: data.loaned.filter(r => r.person.toLowerCase() !== lower),
+    });
+    showToast(`Removed all records for ${name}`);
+  }
+
   function resetAll() {
     persist(emptyData());
     showToast("All data cleared");
@@ -190,6 +247,7 @@ export default function App() {
     data.claimed.forEach(r => set.add(r.person));
     data.pending.forEach(r => set.add(r.person));
     data.givenOut.forEach(r => set.add(r.person));
+    data.loaned.forEach(r => set.add(r.person));
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [data]);
 
@@ -278,20 +336,20 @@ export default function App() {
             onRequestReset={() => requestPassword("Clear All Data", resetAll)} />
         )}
         {view.name === "receive" && <ReceiveStock addStock={addStock} otherNames={otherNames} />}
-        {view.name === "people" && <PeopleList allPeople={allPeople} peopleWithItemsHere={peopleWithItemsHere} goto={goto} />}
         {view.name === "giveout" && (
-          <GiveOut data={data} allPeople={allPeople} giveOutClaimed={giveOutClaimed} giveOutSpare={giveOutSpare} presetPerson={view.person} goto={goto} />
+          <GiveOut data={data} allPeople={allPeople} giveOutClaimed={giveOutClaimed} giveOutSpare={giveOutSpare} loanOut={loanOut} presetPerson={view.person} goto={goto} />
         )}
         {view.name === "history" && (
           <HistoryPage givenOut={data.givenOut} updateRecord={updateRecord} deleteRecordFn={deleteRecordFn} requestPassword={requestPassword} />
         )}
         {view.name === "category" && (
           <CategoryPage category={view.category} focusName={view.focusName} data={data} totals={totals} goto={goto}
-            updateRecord={updateRecord} deleteRecordFn={deleteRecordFn} requestPassword={requestPassword} />
+            updateRecord={updateRecord} deleteRecordFn={deleteRecordFn} requestPassword={requestPassword} returnToSpare={returnToSpare} />
         )}
         {view.name === "person" && (
           <PersonPage name={view.person} data={data} goto={goto} markReceived={markReceived} addStock={addStock} otherNames={otherNames}
-            updateRecord={updateRecord} deleteRecordFn={deleteRecordFn} requestPassword={requestPassword} />
+            updateRecord={updateRecord} deleteRecordFn={deleteRecordFn} requestPassword={requestPassword}
+            returnToSpare={returnToSpare} returnLoan={returnLoan} deletePerson={deletePerson} />
         )}
       </main>
 
@@ -353,9 +411,8 @@ function TopNav({ view, goto }) {
   const items = [
     { key: "dashboard", label: "Dashboard", icon: Home },
     { key: "receive", label: "Receive Stock", icon: Plus },
-    { key: "people", label: "People", icon: Users },
     { key: "giveout", label: "Give Out", icon: Send },
-    { key: "history", label: "History", icon: HistoryIcon },
+    { key: "history", label: "Given Out History", icon: HistoryIcon },
   ];
   return (
     <div style={{ borderBottom: "1px solid var(--border)", background: "var(--panel)" }} className="sticky top-0 z-40">
@@ -548,40 +605,8 @@ function ReceiveStock({ addStock, otherNames }) {
   );
 }
 
-// ================= PEOPLE =================
-function PeopleList({ allPeople, peopleWithItemsHere, goto }) {
-  const [q, setQ] = useState("");
-  const hereMap = Object.fromEntries(peopleWithItemsHere);
-  const filtered = allPeople.filter(p => p.toLowerCase().includes(q.toLowerCase()));
-
-  return (
-    <div>
-      <h1 className="display text-2xl font-bold mb-5">People</h1>
-      <div className="flex gap-2 mb-6">
-        <input type="text" value={q} onChange={e => setQ(e.target.value)} placeholder="Find or add a person…"
-          className="flex-1 px-3.5 py-2.5 rounded-lg" />
-        <button onClick={() => q.trim() && goto({ name: "person", person: q.trim() })} className="btn-outline px-4 rounded-lg font-semibold">Open</button>
-      </div>
-      {filtered.length === 0 ? (
-        <p className="text-sm" style={{ color: "var(--ink-soft)" }}>No people found yet. Receive claimed stock for someone to add them here.</p>
-      ) : (
-        <div className="flex flex-col gap-1.5">
-          {filtered.map(name => (
-            <button key={name} onClick={() => goto({ name: "person", person: name })} className="tag-card flex items-center justify-between px-4 py-3 text-left">
-              <span className="font-medium">{name}</span>
-              <span className="text-sm mono flex items-center gap-1" style={{ color: "var(--ink-soft)" }}>
-                {hereMap[name] || 0} here <ChevronRight size={15} />
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ================= GIVE OUT =================
-function GiveOut({ data, allPeople, giveOutClaimed, giveOutSpare, presetPerson, goto }) {
+function GiveOut({ data, allPeople, giveOutClaimed, giveOutSpare, loanOut, presetPerson, goto }) {
   const [person, setPerson] = useState(presetPerson || "");
   const [active, setActive] = useState(presetPerson || "");
   const [selected, setSelected] = useState([]);
@@ -589,6 +614,10 @@ function GiveOut({ data, allPeople, giveOutClaimed, giveOutSpare, presetPerson, 
   const [spareOtherName, setSpareOtherName] = useState("");
   const [spareQty, setSpareQty] = useState(1);
   const [err, setErr] = useState("");
+  const [loanCategory, setLoanCategory] = useState("Laptop");
+  const [loanOtherName, setLoanOtherName] = useState("");
+  const [loanQty, setLoanQty] = useState(1);
+  const [loanErr, setLoanErr] = useState("");
 
   const claimedForPerson = active ? data.claimed.filter(r => r.person.toLowerCase() === active.toLowerCase()) : [];
 
@@ -598,6 +627,24 @@ function GiveOut({ data, allPeople, giveOutClaimed, giveOutSpare, presetPerson, 
     const rec = data.spare.find(r => r.category === spareCategory && r.otherName === key);
     return rec ? rec.quantity : 0;
   })();
+
+  const availableSpareForLoan = (() => {
+    const key = loanCategory === "Other Equipment" ? loanOtherName : "";
+    const rec = data.spare.find(r => r.category === loanCategory && r.otherName === key);
+    return rec ? rec.quantity : 0;
+  })();
+
+  function submitLoan(e) {
+    e.preventDefault();
+    if (!active.trim()) { setLoanErr("Enter who this is for first."); return; }
+    const qty = parseInt(loanQty, 10);
+    if (!qty || qty < 1) { setLoanErr("Enter a valid quantity."); return; }
+    if (loanCategory === "Other Equipment" && !loanOtherName) { setLoanErr("Choose which spare item."); return; }
+    if (qty > availableSpareForLoan) { setLoanErr(`Only ${availableSpareForLoan} available in spare stock.`); return; }
+    setLoanErr("");
+    const ok = loanOut({ category: loanCategory, otherName: loanOtherName, quantity: qty, person: active });
+    if (ok) setLoanQty(1);
+  }
 
   function load() {
     if (!person.trim()) return;
@@ -697,6 +744,37 @@ function GiveOut({ data, allPeople, giveOutClaimed, giveOutSpare, presetPerson, 
             {err && <div className="text-sm flex items-center gap-1.5" style={{ color: "var(--danger)" }}><AlertCircle size={14} /> {err}</div>}
             <button type="submit" className="btn-outline py-2.5 rounded-xl font-semibold">Give Out</button>
           </form>
+
+          <h2 className="display font-bold text-sm uppercase tracking-wide mt-8 mb-3" style={{ color: "var(--ink-soft)" }}>
+            Loan From Spare Stock <span className="normal-case font-normal" style={{ color: "var(--ink-soft)" }}>(borrowed, expected back)</span>
+          </h2>
+          <form onSubmit={submitLoan} className="tag-card p-4 flex flex-col gap-3">
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--ink-soft)" }}>Equipment</label>
+              <select value={loanCategory} onChange={e => { setLoanCategory(e.target.value); setLoanOtherName(""); }}
+                className="w-full mt-1.5 px-3 py-2 rounded-lg">
+                {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            {loanCategory === "Other Equipment" && (
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--ink-soft)" }}>Item</label>
+                <select value={loanOtherName} onChange={e => setLoanOtherName(e.target.value)} className="w-full mt-1.5 px-3 py-2 rounded-lg">
+                  <option value="">Choose an item…</option>
+                  {spareOtherOptions.map(n => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </div>
+            )}
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--ink-soft)" }}>Quantity</label>
+              <span className="text-xs mono" style={{ color: "var(--ink-soft)" }}>{availableSpareForLoan} available</span>
+            </div>
+            <input type="number" min="1" value={loanQty} onChange={e => setLoanQty(e.target.value)} className="w-full px-3 py-2 rounded-lg" />
+            {loanErr && <div className="text-sm flex items-center gap-1.5" style={{ color: "var(--danger)" }}><AlertCircle size={14} /> {loanErr}</div>}
+            <button type="submit" className="btn-outline py-2.5 rounded-xl font-semibold flex items-center justify-center gap-2">
+              <Repeat size={15} /> Loan Out
+            </button>
+          </form>
         </>
       )}
     </div>
@@ -708,6 +786,7 @@ function HistoryPage({ givenOut, updateRecord, deleteRecordFn, requestPassword }
   const [q, setQ] = useState("");
   const [editingId, setEditingId] = useState(null);
   const [draftQty, setDraftQty] = useState("");
+  const [draftPerson, setDraftPerson] = useState("");
   const filtered = givenOut.filter(r => {
     if (!q.trim()) return true;
     const lower = q.toLowerCase();
@@ -715,7 +794,7 @@ function HistoryPage({ givenOut, updateRecord, deleteRecordFn, requestPassword }
   });
   return (
     <div>
-      <h1 className="display text-2xl font-bold mb-5">Given-Out History</h1>
+      <h1 className="display text-2xl font-bold mb-5">Given Out History</h1>
       <input type="text" value={q} onChange={e => setQ(e.target.value)} placeholder="Search by person or equipment…"
         className="w-full px-3.5 py-2.5 rounded-lg mb-5" />
       {filtered.length === 0 ? (
@@ -734,13 +813,19 @@ function HistoryPage({ givenOut, updateRecord, deleteRecordFn, requestPassword }
             <tbody>
               {filtered.slice().reverse().map(r => (
                 <tr key={r.id} className="dashed-div">
-                  <td className="px-4 py-2.5 font-medium">{r.person}</td>
+                  <td className="px-4 py-2.5 font-medium">
+                    {editingId === r.id ? (
+                      <input type="text" value={draftPerson} onChange={e => setDraftPerson(e.target.value)}
+                        aria-label={`New person for ${itemLabel(r)} entry`}
+                        className="w-32 px-2 py-1 rounded-lg text-sm" />
+                    ) : r.person}
+                  </td>
                   <td className="px-4 py-2.5">{itemLabel(r)}</td>
                   <td className="px-4 py-2.5 text-right mono">
                     {editingId === r.id ? (
                       <input type="number" min="1" value={draftQty} onChange={e => setDraftQty(e.target.value)}
                         aria-label={`New quantity for ${itemLabel(r)} given to ${r.person}`}
-                        className="w-16 px-2 py-1 rounded-lg text-sm text-center" autoFocus />
+                        className="w-16 px-2 py-1 rounded-lg text-sm text-center" />
                     ) : r.quantity}
                   </td>
                   <td className="px-4 py-2.5 text-right">
@@ -748,15 +833,18 @@ function HistoryPage({ givenOut, updateRecord, deleteRecordFn, requestPassword }
                       <span className="inline-flex items-center gap-1.5">
                         <button onClick={() => {
                           const qty = parseInt(draftQty, 10);
-                          if (qty > 0) updateRecord("givenOut", r.id, { quantity: qty });
+                          const updates = {};
+                          if (qty > 0) updates.quantity = qty;
+                          if (draftPerson.trim()) updates.person = draftPerson.trim();
+                          updateRecord("givenOut", r.id, updates);
                           setEditingId(null);
                         }} className="btn-primary text-xs px-2.5 py-1.5 rounded-lg font-semibold">Save</button>
                         <button onClick={() => setEditingId(null)} className="btn-outline text-xs px-2.5 py-1.5 rounded-lg font-semibold">Cancel</button>
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-1">
-                        <button onClick={() => requestPassword("Edit Item", () => { setEditingId(r.id); setDraftQty(String(r.quantity)); })}
-                          aria-label={`Edit quantity for ${itemLabel(r)} given to ${r.person}`} title="Edit quantity" className="icon-btn"><Pencil size={13} /></button>
+                        <button onClick={() => requestPassword("Edit Item", () => { setEditingId(r.id); setDraftQty(String(r.quantity)); setDraftPerson(r.person); })}
+                          aria-label={`Edit ${itemLabel(r)} given to ${r.person}`} title="Edit" className="icon-btn"><Pencil size={13} /></button>
                         <button onClick={() => requestPassword("Delete Item", () => deleteRecordFn("givenOut", r.id))}
                           aria-label={`Delete ${itemLabel(r)} given to ${r.person}`} title="Delete" className="icon-btn danger"><Trash2 size={13} /></button>
                       </span>
@@ -773,7 +861,7 @@ function HistoryPage({ givenOut, updateRecord, deleteRecordFn, requestPassword }
 }
 
 // ================= ITEM ROW (edit / delete) =================
-function ItemRow({ label, onClickLabel, quantity, chipClass, editing, draftQty, onDraftChange, onEdit, onDelete, onSave, onCancel }) {
+function ItemRow({ label, onClickLabel, quantity, chipClass, editing, draftQty, onDraftChange, onEdit, onDelete, onSave, onCancel, onReturnToSpare }) {
   if (editing) {
     return (
       <div className="tag-card flex items-center justify-between px-4 py-2.5 gap-2">
@@ -797,6 +885,12 @@ function ItemRow({ label, onClickLabel, quantity, chipClass, editing, draftQty, 
       )}
       <div className="flex items-center gap-1.5 shrink-0">
         <span className={`mono ${chipClass} text-xs font-semibold px-2 py-1 rounded-full`}>×{quantity}</span>
+        {onReturnToSpare && (
+          <button onClick={onReturnToSpare} title="Return to spare (no longer needed)" aria-label={`Return ${label} to spare stock`}
+            className="icon-btn flex items-center gap-1 text-xs font-semibold px-2" style={{ width: "auto" }}>
+            <RotateCcw size={12} /> Spare
+          </button>
+        )}
         <button onClick={onEdit} aria-label={`Edit quantity for ${label}`} title="Edit quantity" className="icon-btn"><Pencil size={13} /></button>
         <button onClick={onDelete} aria-label={`Delete ${label}`} title="Delete" className="icon-btn danger"><Trash2 size={13} /></button>
       </div>
@@ -805,7 +899,7 @@ function ItemRow({ label, onClickLabel, quantity, chipClass, editing, draftQty, 
 }
 
 // ================= CATEGORY PAGE =================
-function CategoryPage({ category, focusName, data, totals, goto, updateRecord, deleteRecordFn, requestPassword }) {
+function CategoryPage({ category, focusName, data, totals, goto, updateRecord, deleteRecordFn, requestPassword, returnToSpare }) {
   const Icon = CATEGORY_ICON[category];
   const [editingId, setEditingId] = useState(null);
   const [draftQty, setDraftQty] = useState("");
@@ -883,6 +977,7 @@ function CategoryPage({ category, focusName, data, totals, goto, updateRecord, d
                 setEditingId(null);
               }}
               onCancel={() => setEditingId(null)}
+              onReturnToSpare={() => returnToSpare(r.id)}
             />
           ))}
         </div>
@@ -926,7 +1021,7 @@ function BackBtn({ goto, onClick }) {
 }
 
 // ================= PERSON PAGE =================
-function PersonPage({ name, data, goto, markReceived, addStock, otherNames, updateRecord, deleteRecordFn, requestPassword }) {
+function PersonPage({ name, data, goto, markReceived, addStock, otherNames, updateRecord, deleteRecordFn, requestPassword, returnToSpare, returnLoan, deletePerson }) {
   const [addingExpected, setAddingExpected] = useState(false);
   const [exCategory, setExCategory] = useState("Laptop");
   const [exOtherName, setExOtherName] = useState("");
@@ -934,11 +1029,13 @@ function PersonPage({ name, data, goto, markReceived, addStock, otherNames, upda
   const [err, setErr] = useState("");
   const [editing, setEditing] = useState(null); // { list, id } | null
   const [draftQty, setDraftQty] = useState("");
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const claimed = data.claimed.filter(r => r.person.toLowerCase() === name.toLowerCase());
   const pending = data.pending.filter(r => r.person.toLowerCase() === name.toLowerCase());
   const givenOut = data.givenOut.filter(r => r.person.toLowerCase() === name.toLowerCase());
-  const isNew = claimed.length === 0 && pending.length === 0 && givenOut.length === 0;
+  const loaned = data.loaned.filter(r => r.person.toLowerCase() === name.toLowerCase());
+  const isNew = claimed.length === 0 && pending.length === 0 && givenOut.length === 0 && loaned.length === 0;
 
   function submitExpected(e) {
     e.preventDefault();
@@ -987,7 +1084,36 @@ function PersonPage({ name, data, goto, markReceived, addStock, otherNames, upda
             onDelete={() => requestDelete("claimed", r.id)}
             onSave={saveEdit}
             onCancel={() => setEditing(null)}
+            onReturnToSpare={() => returnToSpare(r.id)}
           />
+        ))}
+      </Section>
+
+      <Section title="Currently Borrowing" icon={Repeat}>
+        {loaned.length === 0 ? <Empty text="Not currently borrowing anything." /> : loaned.map(r => (
+          editing?.list === "loaned" && editing?.id === r.id ? (
+            <div key={r.id} className="tag-card flex items-center justify-between px-4 py-2.5 gap-2">
+              <span className="font-medium truncate">{itemLabel(r)}</span>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <input type="number" min="1" value={draftQty} onChange={e => setDraftQty(e.target.value)}
+                  className="w-16 px-2 py-1.5 rounded-lg text-sm text-center" autoFocus />
+                <button onClick={saveEdit} className="btn-primary text-xs px-2.5 py-1.5 rounded-lg font-semibold">Save</button>
+                <button onClick={() => setEditing(null)} className="btn-outline text-xs px-2.5 py-1.5 rounded-lg font-semibold">Cancel</button>
+              </div>
+            </div>
+          ) : (
+            <div key={r.id} className="tag-card flex items-center justify-between px-4 py-2.5 gap-2">
+              <span className="font-medium truncate">{itemLabel(r)}</span>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="mono chip-spare text-xs font-semibold px-2 py-1 rounded-full">×{r.quantity}</span>
+                <button onClick={() => returnLoan(r.id)} className="btn-outline text-xs px-2.5 py-1.5 rounded-lg font-semibold flex items-center gap-1">
+                  <CheckCircle2 size={13} /> Mark as Returned
+                </button>
+                <button onClick={() => startEdit("loaned", r)} aria-label={`Edit quantity for ${itemLabel(r)}`} title="Edit quantity" className="icon-btn"><Pencil size={13} /></button>
+                <button onClick={() => requestDelete("loaned", r.id)} aria-label={`Delete ${itemLabel(r)}`} title="Delete" className="icon-btn danger"><Trash2 size={13} /></button>
+              </div>
+            </div>
+          )
         ))}
       </Section>
 
@@ -1054,6 +1180,18 @@ function PersonPage({ name, data, goto, markReceived, addStock, otherNames, upda
           />
         ))}
       </Section>
+
+      {!isNew && (
+        <div className="mt-10 pt-6" style={{ borderTop: "1px solid var(--border)" }}>
+          <button onClick={() => requestPassword("Delete This Person", () => deletePerson(name))}
+            className="text-xs underline flex items-center gap-1" style={{ color: "var(--danger)" }}>
+            <UserX size={12} /> Delete all records for {name}
+          </button>
+          <p className="text-xs mt-1" style={{ color: "var(--ink-soft)" }}>
+            Removes every claimed, expected, borrowed, and history entry for this person. Does not affect spare stock.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
