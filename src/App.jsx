@@ -97,6 +97,7 @@ export default function App() {
       spare: [...data.spare],
       pending: [...data.pending],
       givenOut: [...data.givenOut],
+      loaned: [...data.loaned],
     };
     if (status === "claimed" || status === "pending") {
       const arr = status === "claimed" ? next.claimed : next.pending;
