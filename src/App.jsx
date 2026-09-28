@@ -34,7 +34,7 @@ const FONTS = `
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap');
 `;
 
-export default function App() {
+function TrackerApp() {
   const [data, setData] = useState(emptyData());
   const [loaded, setLoaded] = useState(false);
   const [saveError, setSaveError] = useState(false);
@@ -1210,4 +1210,51 @@ function Section({ title, icon: Icon, children }) {
 
 function Empty({ text }) {
   return <p className="text-sm" style={{ color: "var(--ink-soft)" }}>{text}</p>;
+}
+
+
+// ================= SITE PASSWORD GATE =================
+const SITE_PASSWORD = "12010#";
+const UNLOCK_KEY = "uor-tech-unlocked";
+
+function readUnlocked() {
+  try { return window.sessionStorage.getItem(UNLOCK_KEY) === "1"; } catch (e) { return false; }
+}
+
+export default function App() {
+  const [unlocked, setUnlocked] = useState(readUnlocked);
+  const [pw, setPw] = useState("");
+  const [error, setError] = useState("");
+
+  function submit(e) {
+    e.preventDefault();
+    if (pw === SITE_PASSWORD) {
+      try { window.sessionStorage.setItem(UNLOCK_KEY, "1"); } catch (err) { /* ignore */ }
+      setUnlocked(true);
+    } else {
+      setError("Incorrect password.");
+      setPw("");
+    }
+  }
+
+  if (unlocked) return <TrackerApp />;
+
+  return (
+    <div className="min-h-screen flex items-center justify-center px-4" style={{ background: "#F3F6FC", fontFamily: "'Inter', sans-serif", color: "#001E5F" }}>
+      <style>{FONTS}</style>
+      <form onSubmit={submit} className="w-full max-w-xs rounded-2xl p-6 flex flex-col gap-3 shadow-xl" style={{ background: "#FFFFFF", border: "1px solid #D6E1F5" }}>
+        <div className="flex items-center gap-2">
+          <Lock size={18} />
+          <h1 className="font-bold text-lg" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>UOR Tech Supplies</h1>
+        </div>
+        <p className="text-sm" style={{ color: "#5C6B85" }}>Enter the password to continue.</p>
+        <input type="password" autoFocus value={pw} aria-label="Password"
+          onChange={e => { setPw(e.target.value); setError(""); }}
+          className="w-full px-3 py-2.5 rounded-lg text-base"
+          style={{ border: "1.5px solid #D6E1F5" }} />
+        {error && <div role="alert" className="text-sm flex items-center gap-1.5" style={{ color: "#B23B3B" }}><AlertCircle size={14} /> {error}</div>}
+        <button type="submit" className="py-2.5 rounded-lg font-semibold" style={{ background: "#001E5F", color: "#F3F6FC" }}>Unlock</button>
+      </form>
+    </div>
+  );
 }
